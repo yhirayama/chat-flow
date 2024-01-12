@@ -1,0 +1,337 @@
+id: template_chat_flow
+name: Template Chat Flow
+environment:
+  python_requirements_txt: requirements.txt
+inputs:
+  question:
+    type: string
+    default: 年齢性別の生存率出して
+    is_chat_input: true
+    is_chat_history: false
+  chat_hist:
+    type: list
+    default:
+    - inputs:
+        question: 年齢別の生存率出して
+      outputs:
+        answer: >-
+          以下の要件を確認してください。問題がなければOK、修正が必要な場合は修正内容を記述してください。
+
+          ### 要件定義 ###
+
+          --
+
+          クエリ目的: 年齢と性別に基づいた生存率を抽出するためのクエリを作成する。
+
+          依頼対応可否: 利用可能なテーブルで依頼内容に対応可能です。
+
+          追加要望: なし
+
+          出力項目の定義:
+
+          - 年齢: 年齢を表す数値データ
+
+          - 性別: 性別を表す文字列データ
+
+          - 生存率: 年齢と性別に基づいた生存率を表す数値データ。生存者の数を対象の年齢と性別の総数で割った値です。
+
+
+          フィルタ:
+
+          - 生存フラグが1（生存）のデータのみを抽出します。
+
+
+          使用テーブル: query_chat.titanic
+
+
+          出力カラム名と使用カラム名:
+
+          - 年齢: Age
+
+          - 性別: Sex
+
+          - 生存率: COUNT(Survived) / COUNT(*) AS SurvivalRate
+
+
+          テーブル関係: なし（単一のテーブルを使用）
+
+
+          ER図: なし（単一のテーブルを使用）
+
+
+          処理の流れ:
+
+          1. 生存フラグが1（生存）のデータのみを抽出します。
+
+          2. 年齢と性別ごとにグループ化し、生存者の数と総数を計算します。
+
+          3. 生存者の数を対象の年齢と性別の総数で割り、生存率を計算します。
+
+
+          主要関数/操作: COUNT, GROUP BY
+
+
+          プロトタイプクエリ:
+
+          ```
+
+          SELECT Age, Sex, COUNT(Survived) / COUNT(*) AS SurvivalRate
+
+          FROM query_chat.titanic
+
+          WHERE Survived = 1
+
+          GROUP BY Age, Sex
+
+          ```
+
+
+          クエリ説明: クエリでは、生存フラグが1（生存）のデータのみを抽出し、年齢と性別ごとにグループ化します。その後、生存者の数を対象の年齢と性別の総数で割り、生存率を計算します。
+
+
+          注意事項: 年齢や性別が欠損している場合、そのデータは生存率の計算から除外されます。
+
+
+          status: 要件定義完了
+    is_chat_history: true
+outputs:
+  answer:
+    type: string
+    reference: ${aggregate_output.output}
+    is_chat_output: true
+nodes:
+- name: requirement_status_chack
+  type: llm
+  source:
+    type: code
+    path: statsu_chack.jinja2
+  inputs:
+    model: gpt-3.5-turbo
+    temperature: 0
+    chat_history: ${inputs.chat_hist}
+    question: ${inputs.question}
+    functions: |
+      [
+          {
+              "name": "requirement_status_chack",
+              "description": "検討の進捗を入力として、進捗に合わせて処理を行う",
+              "parameters": {
+                  "type": "object",
+                  "properties": {
+                      "進捗ステータス": {
+                          "type": "string",
+                          "description": "進捗ステータス"
+                      }
+                  },
+                  "required": ["進捗ステータス"]
+              }
+          }
+      ]
+    function_call:
+      name: requirement_status_chack
+  connection: OpenAIConnection
+  api: chat
+- name: get_table_info
+  type: python
+  source:
+    type: code
+    path: get_table_info.py
+  inputs:
+    table_id: titanic
+    dataset_id: query_chat
+  aggregation: false
+- name: requirement_status_check_branch
+  type: python
+  source:
+    type: code
+    path: status_check_branch.py
+  inputs:
+    input1: ${requirement_status_chack.output}
+    target_key: 進捗ステータス
+- name: requirement
+  type: llm
+  source:
+    type: code
+    path: requirement_prompt.jinja2
+  inputs:
+    max_tokens: 1000
+    temperature: 0
+    model: gpt-3.5-turbo
+    table_info: ${get_table_info.output}
+    question: ${inputs.question}
+  connection: OpenAIConnection
+  api: chat
+  activate:
+    when: ${requirement_status_check_branch.output}
+    is: 初回要件確認
+- name: re_requirement
+  type: llm
+  source:
+    type: code
+    path: re_requirement_prompt.jinja2
+  inputs:
+    max_tokens: 1000
+    temperature: 0
+    model: gpt-3.5-turbo
+    table_info: ${get_table_info.output}
+    chat_history: ${inputs.chat_hist}
+    additional_question: ${inputs.question}
+  connection: OpenAIConnection
+  api: chat
+  activate:
+    when: ${requirement_status_check_branch.output}
+    is: 追加要件確認
+- name: get_rfp
+  type: python
+  source:
+    type: code
+    path: get_rfp.py
+  inputs:
+    chat_hist: ${inputs.chat_hist}
+  activate:
+    when: ${requirement_status_chack.output}
+    is: 要件定義完了
+- name: create_query
+  type: llm
+  source:
+    type: code
+    path: create_query.jinja2
+  inputs:
+    temperature: 0
+    model: gpt-3.5-turbo
+    functions:
+    - name: create_query
+      description: bigqueryにqueryを実行する関数
+      parameters:
+        type: object
+        properties:
+          目的:
+            type: string
+            description: クエリ作成の目的
+          クエリ:
+            type: string
+            description: サンプルクエリの記載。サブクエリやCTE使用時は分かりやすくセクション分けをする。
+          出力項目の定義:
+            type: string
+            description: 出力項目名と定義、計算ロジックを明示。
+          フィルタ:
+            type: string
+            description: データのフィルタリング/ソート条件とルールのリストアップ。。
+          処理の流れ:
+            type: string
+            description: "ステップバイステップのクエリのデータ処理ロードマップ。複雑な処理（例: ウィンドウ関数、サブクエリ）については必要性を説明。。"
+          出力カラム名と使用カラム名:
+            type: string
+            description: サンプルクエリの記載。サブクエリやCTE使用時は分かりやすくセクション分けをする。
+          注意事項:
+            type: string
+            description: 出力されたデータの定義上の注意点。出力されたデータの定義上の注意点。正確に定義されていない処理を行った場合は説明する。例）体重カラムがなかったので年齢で代用しました。
+        required:
+        - 目的
+        - クエリ
+        - 出力カラム名と使用カラム名
+        - 出力項目の定義
+        - フィルタ
+        - 処理の流れ
+        - 注意事項
+    table_info: ${get_table_info.output}
+    rfp: ${get_rfp.output}
+  connection: OpenAIConnection
+  api: chat
+- name: exe_query
+  type: python
+  source:
+    type: code
+    path: exe_query.py
+  inputs:
+    input1: ${create_query.output}
+    input_rfp: ${get_rfp.output}
+- name: review
+  type: llm
+  source:
+    type: code
+    path: request_definition_review.jinja2
+  inputs:
+    model: gpt-3.5-turbo
+    temperature: 0
+    rfp: ${requirement.output}
+    max_tokens: 1000
+    functions: >
+      [
+          {
+              "name": "review",
+              "description": "データ抽出の要件における不足情報を取得する",
+              "parameters": {
+                  "type": "object",
+                  "properties": {
+                      "懸念点": {
+                          "type": "array",
+                          "items": {
+                              "type": "object",
+                              "additionalProperties": {
+                                  "type": "string",
+                                  "description": "懸念点"
+                              }
+                          },
+                          "description": "懸念点のリスト"
+                      },
+                      "確認事項": {
+                          "type": "array",
+                          "items": {
+                              "type": "object",
+                              "additionalProperties": {
+                                  "type": "string",
+                                  "description": "確認事項"
+                              }
+                          },
+                          "description": "確認事項のリスト"
+                      },
+                      "注意事項": {
+                          "type": "string",
+                          "description": "正確に定義されていない処理を行った場合は説明する。例）体重カラムがなかったので年齢で代用しました。"
+                      },
+                      "確認要否": {
+                          "type": "boolean",
+                          "description": "確認要否。要:True, 否:False"
+                      }
+                  },
+                  "required": ["懸念点", "確認事項", "確認要否", "注意事項"]
+              }
+          }
+      ]
+    re_rfp: ${re_requirement.output}
+    function_call: auto
+  connection: OpenAIConnection
+  api: chat
+- name: parse_is_confirm_req
+  type: python
+  source:
+    type: code
+    path: parse_function_call.py
+  inputs:
+    input1: ${review.output}
+    target_key: 確認要否
+    rfp: ${requirement.output}
+    rfp2: ${re_requirement.output}
+- name: aggregate_output
+  type: python
+  source:
+    type: code
+    path: aggregate_output.py
+  inputs:
+    input1: ${ConfirmRequirements.output}
+    input2: ${parse_is_confirm_req.output}
+  aggregation: false
+- name: ConfirmRequirements
+  type: llm
+  source:
+    type: code
+    path: ConfirmRequirements.jinja2
+  inputs:
+    model: gpt-3.5-turbo
+    text: ${review.output}
+  connection: OpenAIConnection
+  api: chat
+  activate:
+    when: ${parse_is_confirm_req.output.hasConfirm}
+    is: true

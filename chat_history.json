@@ -1,0 +1,11 @@
+[
+    {
+        "role": "user", 
+        "content": "生存者の人数教えて"}, 
+    {
+        "role": "system", 
+        "content": "以下の要件を確認してください。問題がなければOK、修正が必要な場合は修正内容を記述してください。\n--\nstatus: 要件定義完了"},
+    {
+        "role": "user", 
+        "content": "ok"}    
+]
