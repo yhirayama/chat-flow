@@ -12,7 +12,7 @@ def generate_response(input1=None, input2=None, input3=None) -> str:
         return comment + input2.get('rfp')
     elif input3 is not None:
         dct = json.loads(input3)
-        if not dct['is_error']:
+        if not dct.get('is_error', True):
             comment = "以下のURLにデータを出力しました。"
             file_url = dct['file_url']
             sample = dct['df_sample']

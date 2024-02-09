@@ -5,100 +5,23 @@ environment:
 inputs:
   question:
     type: string
-    default: 年齢性別の生存率出して
-    is_chat_input: true
-    is_chat_history: false
+    default: OK
   chat_hist:
     type: list
     default:
     - inputs:
-        question: 年齢別の生存率出して
+        question: 私たちが提供する食事の価格が、各市でどのように異なるかを知りたいです。各市の食事の平均価格を教えてください。
       outputs:
         answer: >-
           以下の要件を確認してください。問題がなければOK、修正が必要な場合は修正内容を記述してください。
 
           ### 要件定義 ###
 
-          --
-
-          クエリ目的: 年齢と性別に基づいた生存率を抽出するためのクエリを作成する。
-
-          依頼対応可否: 利用可能なテーブルで依頼内容に対応可能です。
-
-          追加要望: なし
-
-          出力項目の定義:
-
-          - 年齢: 年齢を表す数値データ
-
-          - 性別: 性別を表す文字列データ
-
-          - 生存率: 年齢と性別に基づいた生存率を表す数値データ。生存者の数を対象の年齢と性別の総数で割った値です。
-
-
-          フィルタ:
-
-          - 生存フラグが1（生存）のデータのみを抽出します。
-
-
-          使用テーブル: query_chat.titanic
-
-
-          出力カラム名と使用カラム名:
-
-          - 年齢: Age
-
-          - 性別: Sex
-
-          - 生存率: COUNT(Survived) / COUNT(*) AS SurvivalRate
-
-
-          テーブル関係: なし（単一のテーブルを使用）
-
-
-          ER図: なし（単一のテーブルを使用）
-
-
-          処理の流れ:
-
-          1. 生存フラグが1（生存）のデータのみを抽出します。
-
-          2. 年齢と性別ごとにグループ化し、生存者の数と総数を計算します。
-
-          3. 生存者の数を対象の年齢と性別の総数で割り、生存率を計算します。
-
-
-          主要関数/操作: COUNT, GROUP BY
-
-
-          プロトタイプクエリ:
-
-          ```
-
-          SELECT Age, Sex, COUNT(Survived) / COUNT(*) AS SurvivalRate
-
-          FROM query_chat.titanic
-
-          WHERE Survived = 1
-
-          GROUP BY Age, Sex
-
-          ```
-
-
-          クエリ説明: クエリでは、生存フラグが1（生存）のデータのみを抽出し、年齢と性別ごとにグループ化します。その後、生存者の数を対象の年齢と性別の総数で割り、生存率を計算します。
-
-
-          注意事項: 年齢や性別が欠損している場合、そのデータは生存率の計算から除外されます。
-
-
-          status: 要件定義完了
-    is_chat_history: true
+          -- フォーマット -- クエリ目的: 各市の食事の平均価格を抽出するためのクエリを作成する。 依頼対応可否: 利用可能なテーブルで依頼内容に対応可能。 追加要望: なし 出力項目の定義:  - city: 市の名前 - average_price: 各市の食事の平均価格 フィルタ: なし 使用テーブル: restaurants_kaggle.cities, restaurants_kaggle.meals, restaurants_kaggle.restaurants 出力カラム名と使用カラム名:  - city: cities.city - average_price: AVG(meals.price) テーブル関係: citiesテーブルとrestaurantsテーブルはcity_idで関連付けられている。restaurantsテーブルとmealsテーブルはrestaurant_idで関連付けられている。 ER図:  ``` +-------------------+       +-------------------+       +-------------------+ |     cities        |       |   restaurants     |       |       meals       | +-------------------+       +-------------------+       +-------------------+ | id (PK)           |       | id (PK)           |       | id (PK)           | | city              |<------| city_id           |       | restaurant_id     | +-------------------+       | restaurant_name   |<------| serve_type_id     | | restaurant_type_id|       | meal_type_id      | | income_persentage |       | hot_cold          | | city_id           |       | meal_name         | +-------------------+       | price             | +-------------------+ ``` 処理の流れ:  1. citiesテーブルとrestaurantsテーブルをcity_idで結合する。 2. 結果をrestaurant_idでmealsテーブルと結合する。 3. 結果をcityごとにグループ化し、各市の食事の平均価格を計算する。 主要関数/操作: AVG関数 プロトタイプクエリ:  ``` SELECT c.city, AVG(m.price) AS average_price FROM restaurants_kaggle.cities AS c JOIN restaurants_kaggle.restaurants AS r ON c.id = r.city_id JOIN restaurants_kaggle.meals AS m ON r.id = m.restaurant_id GROUP BY c.city ``` クエリ説明: citiesテーブルとrestaurantsテーブルをcity_idで結合し、その結果をrestaurant_idでmealsテーブルと結合します。その後、各市の食事の平均価格を計算するためにAVG関数を使用しています。 注意事項: なし ER図チェック: ER図とプロダクトクエリが利用可能テーブルに存在しないデータを使用していないことを確認しました。利用可能テーブルに存在しないデータを使用していないため、「OK」とします。 status: 要件定義完了
 outputs:
   answer:
     type: string
     reference: ${aggregate_output.output}
-    is_chat_output: true
 nodes:
 - name: requirement_status_chack
   type: llm
@@ -106,7 +29,7 @@ nodes:
     type: code
     path: statsu_chack.jinja2
   inputs:
-    model: gpt-3.5-turbo
+    model: gpt-4
     temperature: 0
     chat_history: ${inputs.chat_hist}
     question: ${inputs.question}
@@ -121,9 +44,13 @@ nodes:
                       "進捗ステータス": {
                           "type": "string",
                           "description": "進捗ステータス"
+                      },
+                      "要望": {
+                          "type": "string",
+                          "description": "ユーザー要望のサマリ"
                       }
                   },
-                  "required": ["進捗ステータス"]
+                  "required": ["進捗ステータス", "要望"]
               }
           }
       ]
@@ -137,7 +64,6 @@ nodes:
     type: code
     path: get_table_info.py
   inputs:
-    table_id: titanic
     dataset_id: query_chat
   aggregation: false
 - name: requirement_status_check_branch
@@ -158,7 +84,6 @@ nodes:
     temperature: 0
     model: gpt-3.5-turbo
     table_info: ${get_table_info.output}
-    question: ${inputs.question}
   connection: OpenAIConnection
   api: chat
   activate:
@@ -172,7 +97,7 @@ nodes:
   inputs:
     max_tokens: 1000
     temperature: 0
-    model: gpt-3.5-turbo
+    model: gpt-4
     table_info: ${get_table_info.output}
     chat_history: ${inputs.chat_hist}
     additional_question: ${inputs.question}
@@ -198,7 +123,7 @@ nodes:
     path: create_query.jinja2
   inputs:
     temperature: 0
-    model: gpt-3.5-turbo
+    model: gpt-4
     functions:
     - name: create_query
       description: bigqueryにqueryを実行する関数
@@ -321,6 +246,7 @@ nodes:
   inputs:
     input1: ${ConfirmRequirements.output}
     input2: ${parse_is_confirm_req.output}
+    input3: ${exe_query.output}
   aggregation: false
 - name: ConfirmRequirements
   type: llm
